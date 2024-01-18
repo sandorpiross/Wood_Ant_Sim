@@ -1,0 +1,112 @@
+---
+title: "List of parameters"
+output: pdf_document
+params:
+  estimated_parameters: "."
+  not_estimated_parameters: "."
+  gravity_parameters: "."
+  new_dir: "."
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(knitr)
+library(tidyverse)
+# estimated_parameters <- readRDS("./Output/Model parameters/estimated_parameters.rds")
+# gravity_parameters <- readRDS("./Output/Model parameters/gravity_parameters.rds")
+# not_estimated_parameters <- readRDS("./Output/Model parameters/not_estimated_parameters.rds")
+estimated_parameters <- params$estimated_parameters
+not_estimated_parameters <- params$not_estimated_parameters
+gravity_parameters <- params$gravity_parameters
+new_dir <- params$new_dir
+```
+
+`r as.character(print(gsub("_",":", new_dir)))`
+
+# Estimated parameters
+```{r}
+kable(estimated_parameters |> 
+        filter(parameter_name!="Number of trails per nest") |> 
+  mutate(distribution=fct_recode(factor(distribution),
+                                 `Negative binomial`="nbinom",
+                                 Gamma = "gamma",
+                                 Poisson = "pois")), digits = 2,
+  col.names = c("Parameter name", "Distribution", "Distribution parameter", "Distribution parameter estimate", "Distribution parameter estimate SE"),
+  row.names = FALSE)
+```
+
+# Not estimated parameters
+```{r}
+
+enframe(not_estimated_parameters) |>
+  unnest(cols = c(value)) |>
+  select(-name) |> 
+  mutate(
+    `Parameter name` = c(
+      "Nest carrying capacity",
+      "Maximum foraging trail length",
+      "Nest abandonment threshold",
+      "Width of the map",
+      "Tree inhibition distance (used in rSSI())",
+      "Density of trees",
+      "Minimum distance for newly placed nests (m)",
+      "Upper-bound used in new nest position generation distance redraw (m)",
+      "Maximum initial size for nests as a portion of K (carrying capacity)",
+      "Number of times a potential new internest trail is tried to be placed",
+      "Constant nest size loss rate",
+      "Maximum growth rate of nests",
+      "Maximum probability of a nest budding in each iteration",
+      "Number of times a potential new nest is tried to be placed",
+      "Starting nest size of newly budded nests (1000 ants)",
+      "Probability of a nest forming a new foraging trail",
+      "Probability of a nest forming a new internest trail",
+      "Trail abandonment threshold",
+      "Burn-in length"
+      ),
+    unit=c(
+      "1000 ants",
+      "m",
+      "1000 ants",
+      "m",
+      "m",
+      "$/m^{2}$",
+      "m",
+      "m",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "1000 ants",
+      "",
+      "",
+      "ants/mm",
+      "iterations (weeks)"
+      
+    )
+  ) |> 
+  relocate(`Parameter name`) |> 
+  kable(escape = FALSE, digits = 4)
+
+
+```
+
+# Gravity model parameters
+
+Internest trails
+
+$${s=G\times\frac{(N_1\times N_2)^{\alpha}}{d^\beta}}$$
+
+$${s=`r round(gravity_parameters[gravity_parameters$trail_type=="internest","G_pow"], 3)`\times\frac{(N_1\times N_2)^{`r round(gravity_parameters[gravity_parameters$trail_type=="internest","alpha_pow"], 3)`}}{d^{`r round(gravity_parameters[gravity_parameters$trail_type=="internest","beta_pow"], 3)`}}}$$ 
+where
+
+- $s$ is trail strength in ants/mm
+- $N_x$ are nest sizes in 1000 ants
+- $d$ trail length in m
+
+Foraging trails
+
+$${s=G\times\frac{N^{\alpha}}{d^\beta}}$$
+
+$${s=`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","G_pow"], 3)`\times\frac{N^{`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","alpha_pow"], 3)`}}{d^{`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","beta_pow"], 3)`}}}$$ 

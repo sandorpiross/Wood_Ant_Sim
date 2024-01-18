@@ -1,0 +1,1026 @@
+---
+title: "Strong and weak environmental perturbations cause contrasting restructure of ant transportation networks\\linebreak Supplementary Material S1\\linebreak Supplementary Methods"
+author:
+  - Imre Sándor Piross^[sandor.piross@gmail.com]
+  - Valentin Lecheval
+  - Scott Powell
+  - Matina C. Donaldson-Matasci
+  - Elva J. H. Robinson
+output:
+  pdf_document:
+    keep_tex: true
+    toc: true
+    toc_depth: 4
+    number_sections: true
+bibliography: Supplementary_references.bib
+csl: citation_style.csl
+documentclass: scrartcl
+header-includes:
+    - \usepackage{nameref}
+    - \usepackage{float}
+    - \RedeclareSectionCommand[tocindent=1em,tocnumwidth=2.5em,]{section}
+    - \RedeclareSectionCommand[tocindent=2em,tocnumwidth=3em,]{subsection}
+    - \RedeclareSectionCommand[tocindent=3em,tocnumwidth=4em,]{subsubsection}
+    - \RedeclareSectionCommand[tocindent=4em,tocnumwidth=5em,]{paragraph}
+---
+
+
+\renewcommand{\thesection}{S1.\arabic{section}}
+\renewcommand{\thetable}{S1.\arabic{table}}
+\renewcommand{\thefigure}{S1.\arabic{figure}}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+
+options(dplyr.summarise.inform = FALSE)
+
+# Model parameters ----------------------------------------------------
+estimated_parameters <- readRDS("./Output/Model_parameters/estimated_parameters.rds")
+gravity_parameters <- readRDS("./Output/Model_parameters/gravity_parameters.rds")
+not_estimated_parameters <- readRDS("./Output/Model_parameters/not_estimated_parameters.rds")
+
+
+```
+
+```{r Importing statistics, include=FALSE, cache=TRUE}
+# Directory for simulation experiments
+new_dir <- "Simulation run 2023-06-27 15_29_43"
+
+# Gathering simulation statistics
+simulation_stats <-
+  lapply(list.files(paste0(
+    "./Output/", new_dir, "/Network statistics"
+  )),
+  function(x) {
+    readRDS(paste0("./Output/", new_dir, "/Network statistics/",
+                   x)) |>
+      mutate(dataset = "Simulation",
+             colony = x) |>
+      relocate(dataset, colony)
+  }) |> bind_rows()
+
+empirical_stats <-
+  readRDS("./Output/Empirical_statistics/empirical_stats.rds")
+```
+
+```{r Stat keys, include=FALSE}
+time_steps <- c((-not_estimated_parameters$burn_in_length),
+                0, 28, 56, 84)
+
+stat_names  <-  c(
+  "Number of nests",
+  "Number of used trees",
+  "Number of foraging trails",
+  "Number of internest trails",
+  "Trees to nests ratio",
+  "Internest trails to nests ratio",
+  "Foraging trails to nests ratio",
+  "Number of components - nests only",
+  "Network efficiency",
+  "Network efficiency - nests only",
+  "Network robustness",
+  "Network robustness - nests only",
+  "Network cost",
+  "Network cost - nests only"
+)
+
+stat_keys_val <-
+  data.frame(
+    stat = c(
+      "num_nests",
+      "num_trees",
+      "num_foraging",
+      "num_internest",
+      "trees_to_nests_rat",
+      "internest_to_nests_rat",
+      "foraging_to_nests_rat",
+      "num_components_nests",
+      "network_efficiency",
+      "network_efficiency_nests",
+      "network_robustness",
+      "network_robustness_nests",
+      "network_cost",
+      "network_cost_nests"
+    ),
+    stat_keys = factor(stat_names, levels = stat_names)
+  )
+
+calculate_descriptive = function(data, y, ...) {
+  y <- enquo(y)
+  data %>%
+    group_by(.dots = lazyeval::lazy_dots(...)) %>% 
+    summarize(Mean = mean(!!y, na.rm=T),
+              N=n(),
+              SD=sd(!!y, na.rm=T),
+              Var_to_Mean=var(!!y, na.rm=T)/mean(!!y, na.rm=T),
+              CV=sd(!!y, na.rm=T)/mean(!!y, na.rm=T),
+              Min=quantile(!!y,0, na.rm=T),
+              LQ=quantile(!!y,0.25, na.rm=T),
+              Median=quantile(!!y,0.5, na.rm=T),
+              UQ=quantile(!!y,0.75, na.rm=T),
+              Max=quantile(!!y,1, na.rm=T),
+              IQR=quantile(!!y,0.75, na.rm=T)-quantile(!!y,0.25, na.rm=T)
+    )
+}
+
+```
+
+\newpage
+# Model description\label{Model description}
+The model description follows the ODD (Overview, Design concepts, Details) protocol for describing individual- and agent-based models @grimmStandardProtocolDescribing2006, as updated by Grimm et al. @grimmODDProtocolDescribing2020 See the main text for additional references.
+
+## Purpose and patterns\label{Purpose and patterns}
+Our simulation model’s ultimate purpose is to improve our general understanding of the responses of multi-sink multi-source transport networks to external perturbations and serve as a basis for future studies. The proximate purpose is to study the response of polydomous wood ant *(Formica lugubris)* transport networks to environmental perturbations. Polydomous wood ants form colonies consisting of multiple nests connected by internest trails. They either forage for aphid honeydew on trees using their foraging trails or use other nests as a foraging resource. The flow of resources is unidirectional from trees to nests on the foraging trails but can be bidirectional between nests on the internest trials. 
+
+We developed the simulation to quantitatively model the networks’ resistance, recovery and how their key structural features change. By resistance, we mean the networks’ ability to withstand perturbations and maintain their functioning. Perturbation in the model is the removal of actively used trees and the associated foraging trails from the network. We primarily measured the functioning of the colonies by the number of nests, actively used trees and network cohesion quantified by the number of network components. We measured the networks' key structural aspects by network efficiency, robustness and cost. We also provided additional metrics for a more detailed perspective (see \ref{Network measures} \nameref{Network measures}). We inferred network recovery by comparing functioning metrics between experimental treatment groups where the perturbation was either sustained or released.  
+
+We based our simulation on and validated it against empirical data from wood ant networks studied in the UK, using different subsets of the data for parameter estimation and validation. (see \ref{Empirical data} \nameref{Empirical data}). The simulated networks respect the functional and structural properties and year-to-year changes in the metrics we used for their description observed in our empirical data (see \ref{Model validation} \nameref{Model validation}).
+
+## Entities, state variables, and scales\label{Entities, state variables, and scales}
+We represent wood ant networks as graphs, representing three kinds of entities: ant nests, trees and ant trails. Nodes represent ant nests and trees, which serve as foraging resources. Nodes are individually identified and have unique coordinates but no spatial extension. Nests have weights that represent their nest size in thousand ants. The nests’ status is *“active”* by default, but as a result of dynamic processes, it can turn into *“abandoned”*, which also sets their nest size to zero, omits their current edges and prevents any further changes in their properties. Trees do not have weights. Their status can *manually be set* to *“abandoned”*, which omits their current edges and prevents them from gaining new ones. Their status can be *manually reversed* to *“active”*, allowing new edges to connect to them further on. Changing the status property of the trees is used to implement resource exclusion treatments in experiments conducted with the model.
+
+Edges represent trails of ants transporting resources from trees to nests, called *“foraging trails”*, or between nests, called *“internest trails”*. Trails cannot connect trees to other trees. The connected nodes identify trails, and they run on the shortest path between them. Based on empirical observations, they cannot cross any other existing trails. Their length is the Euclidean distance between their nodes. Edge weight corresponds to *“trail strength”*, which measures the density of ants on the trail in ants per millimetre. Table \ref{tab:State_variables} lists the state variables that describe the networks.
+
+The model is spatially explicit, nodes have coordinates with real values. The extent of $`r not_estimated_parameters$map_width_m` \times `r not_estimated_parameters$map_width_m`$ m by default leaves enough space for the colonies to expand in all directions in the given timeframe. The first nest is placed in the middle of the map at coordinates (0,0).  
+
+The model runs at 1-week timesteps, which provides a temporal resolution fine enough to model colony-level structural changes @burnsLongitudinalStudyNest2020. The timescale of the simulation encompasses three active seasons (years) for the wood ants and a shorter initial period. The wood ant populations in the UK serving as a reference for the model (see \ref{Empirical data} \nameref{Empirical data}) are active for seven months between April and October. We parameterised the model based on empirical data taken late in their active season. The simulation starts here, at $t=-8$, with a short initial period that also serves as a burn-in phase for the model run. The timestep $t=0$ marks the beginning of the first active season to $t=28$ (4 weeks × 7 months). The simulation stops at $t=84$ at the end of the third active season. The beginnings and endings of the active seasons ($t=0,\,28,\,56,\,84$) do not affect the model. They are highlighted to provide meaningful reference points — yearly changes — when interpreting the results.  
+
+\begin{table}[H]
+\centering
+\caption{List of state variables by entities.}
+\label{tab:variables}
+\renewcommand{\arraystretch}{1.8} % Add space between rows
+\begin{tabular}{ p{1cm} p{3.5cm} p{5cm} p{5cm}  }
+\hline
+\textbf{Entity} & \textbf{Variable name} & \textbf{Variable type and units} & \textbf{Meaning} \\
+\hline
+Nest & Identifier & Nominal (Unique identifier) & Name of the nest \\
+Nest & Nest size & Real number $[0, Nest\,carrying\,capacity]$, thousand ants & Number of inhabiting the nest. Limited by the carrying capacity of the nests estimated from empirical data. See \ref{Model parameters} \nameref{Model parameters} \\
+Nest & Coordinates $x$ and $y$ & Real number $[-30, 30]$, m & Coordinates of the nest \\
+Nest & Status & Factor: active or abandoned & Active nests are subjects to the dynamic processes, abandoned nests lose all their trails, and their nest size is fixed at 0 \\
+Tree & Identifier & Nominal (Unique identifier) & Name of the tree \\
+Tree & Coordinates $x$ and $y$ & Real number $[-30, 30]$, m & Coordinates of the tree \\
+Tree & Status & Factor: active or abandoned & Active trees can, abandoned trees cannot receive foraging trails. This is set manually in resource exclusion experiments. \\
+Trail & Identifier & Nominal (Unique identifier) & Trails are identified from the nodes they connect \\
+Trail & Trail length & Real number $[0, 85]$, m & Trail length is Euclidean distance between the nodes \\
+Trail & Strength & Real number $[0,1]$, ants/mm & Density of ants on the trail \\
+Trail & Status & Factor: active or abandoned & Trails are also abandoned with their nests or when they get too weak \\
+\hline
+\end{tabular}
+\label{tab:State_variables}
+\end{table}
+
+## Process overview and scheduling\label{Process overview and scheduling}
+We incorporated the most important processes responsible for the dynamic changes in the colony network structure. Nests form or lose trials and can establish new nests or disappear. We designed the model to describe dynamic changes in established wood ant networks and did not aim to explain their ontogeny. A modified version of Lecheval et al.’s @lechevalForagingTrailsTransport2021 Morphogenesis model generates the initial networks. See \ref{Initialisation} \nameref{Initialisation} for details.  
+
+The Network dynamics submodel \ref{Network dynamics} \nameref{Network dynamics}  updates the state variables in each iteration in the following order: First, the nests grow in population using a discrete logistic growth formula (see \ref{Updating nest sizes} \nameref{Updating nest sizes}). Their realised growth rate factors in their net resource income rate and a constant loss rate. Resource income is calculated based on the strength of the nest’s trails. If others take no resources away from the nest, they can grow at their maximum potential. If the nest gathers resources at the same rate as others take them away, it has no potential to grow, so the nest slowly shrinks at the constant loss rate. If others take more resources away than the nest gathers, it shrinks proportionally to the deficit. In the following step, nests that shrank in size below a given threshold get abandoned, representing that minuscule nests are not viable (see \ref{Nest abandonment}  \nameref{Nest abandonment} ). Next, active nests can stochastically initiate the formation of a new nest through a process we refer to as budding (see \ref{Nest budding} \nameref{Nest budding}). The probability of budding scales positively with nest size. Newly budded nests automatically form an internest trail with the parent nest. Subsequently, all active nests can stochastically form new foraging trails to trees and internest trails with other nests (see \ref{New trail formation} \nameref{New trail formation}). Lastly, the trail strengths are updated using empirically fitted gravity formulae (see \ref{Updating trail strengths} \nameref{Updating trail strengths}), and trails weaker than a low empirical threshold get abandoned. In summary, these processes update the state variables in the following order:
+
+**1. \ref{Updating nest sizes} \nameref{Updating nest sizes} **  
+    Updates nest size with logistic growth  
+    
+**2. \ref{Nest abandonment}  \nameref{Nest abandonment}**  
+    Updates nest size to 0, nest status to abandoned  
+    Updates affected trail strength to 0 and trail status to abandoned  
+    
+**3. \ref{Nest budding} \nameref{Nest budding}**  
+    Updates all nest-related state variables by adding new nests. New nest sizes take a constant parameter  
+    Updates trail identifier and trail length by adding a new internest trail between the newly budded and parent nest    
+    
+**4. \ref{New trail formation} Formation of new foraging trails**  
+    Updates trail identifier and trail length by stochastically adding new foraging trails to new and existing nests   
+      
+**5. \ref{New trail formation} Formation of new internest trails**  
+    Updates trail identifier and trail length by stochastically adding new internest trails to existing nests   
+    
+**6. \ref{Updating trail strengths} \nameref{Updating trail strengths}**  
+    Updates trail strength for all trails using the gravity formulae  
+    Updates trail strength to 0 and trail status to abandoned if trail strength drops below the abandonment threshold    
+    
+We based the update schedule on the following rationale: Nest sizes are updated first because later processes use them. Nest abandonment follows because removing abandoned nests and trails allows more space for new ones to form, as trails are not allowed to intersect. Nest budding is scheduled before the formation of other trails because new could also form new foraging trails. Trail strengths are updated last when all trails are in place.  
+
+## Design concepts\label{Design concepts}
+
+### Basic principles\label{Basic principles}
+The basic principle of our simulation model is that local, environmental perturbations in multi-sink multi-source transport networks can have global effects and change the affected networks' structure. Wood ant transport networks are a good model system for studying these effects because they exhibit multiple features resembling anthropogenic transport networks such as roads, distribution hubs and resource sites. Previous research has allowed insight into how these networks operate, but practical limitations hinder us from studying external perturbations' effects. Each real-life colony network is unique, and we could only implement one treatment on each, making comparisons weaker and increasing the sample sizes needed to reach sufficient statistical power. Wood ants are often protected and provide important ecosystem services, making sustained perturbation experiments ethically questionable. By compiling our empirical data and understanding on these networks, we can model a wider range of perturbation scenarios with increased sample sizes and control over the experiments.  
+
+Wood ant networks develop through complex interactive processes. Nests can be abandoned or budded by other nests. They can form or abandon new trails between trees or other nests that cannot intersect. Adhering to this latter rule also means that the set of available nodes for a nest constantly changes. Our model consists of two main parts: the generation of the networks based on Lecheval et al. @lechevalForagingTrailsTransport2021 (see \ref{Initialisation} \nameref{Initialisation}) and the dynamic simulation taking all major network-shaping biological processes into account (see \ref{Network dynamics}  \nameref{Network dynamics} ). We then used a selection of measures (see \ref{Network measures} \nameref{Network measures}) on the networks’ functioning and structure to describe their responses to perturbation and to validate them against our empirical observations.  
+
+We based our simulation model on a series of studies [@ellisRoleNonforagingNests2015; @ellisInternestFoodSharing2016; @burnsLongitudinalStudyNest2020; @burnsAntColonyNest2021] and empirical data collected in the UK. We mapped nine wood ant *(Formica lugubris)* colony networks once a year and also recorded nest sizes and trail strengths. Burns et al. @burnsAntColonyNest2021 also implemented an exclusion experiment where we made the tree with the strongest observed foraging trail unavailable for a year. The details on empirical data collection and the exclusion experiment are available in Burns et al @burnsAntColonyNest2021. We have split the data set in half and parameterised the model on data from 2012–2016, the years before the perturbation experiment. We used the 2017–2021 data set to validate the simulation in two parts. We used the five colonies in the control group unperturbed by the exclusion experiment to validate the results of control simulations and the four colonies in the exclusion group to validate the corresponding exclusion treatment in the simulation model. See \ref{Model parameters} for the details of model parametrisation and \ref{Model validation} for the model validation results and \ref{Empirical data} \nameref{Empirical data} for more about how the empirical data were collected.  
+
+### Emergence\label{Emergence}
+We measure the outcome of the simulations using a selection of measures describing the structure and functioning of the network (see \ref{Network measures} \nameref{Network measures}). We focus on network robustness, efficiency and cost, as well as the number of nests, trees and number network components, to answer our main questions and see what network-level changes emerge from different perturbation treatments. We also monitor additional measures (number of foraging and internest trails, number of internest/foraging trails to nests ratio, trees to nests ratio, edge density) to see whether we captured the structural properties and dynamic changes of the networks correctly and to provide further insight (see \ref{Network measures} \nameref{Network measures}). Those measures that take the number of trees or foraging trails are directly affected by removing a tree (the perturbation implemented in our experiments).  
+
+Removal of a tree imposes direct effects on metrics at the time of implementation. This is true for most metrics, except for the number of nests, number of internest trails to nests ratio and the number of network components. The size of this initial effect is trivial in the case of the number of trees, imposed with metrics factoring in trees or foraging trails, and can be emergent in the case of other network metrics. However, how the different treatments affect the development of the networks over time is not directly imposed by the modelled dynamic processes and is the main interest of the simulations.  
+
+### Adaptation, Objectives, Learning and Prediction\label{Adaptation, Objectives, Learning and Prediction}
+Entities have no adaptive behaviour defined in this model. They are not capable of learning or predicting consequences. They have no specified objective, but nests can grow, positively affecting their survival and their probability of budding a new nest.
+
+### Sensing\label{Sensing}
+Only nests can sense their environment and only when trying to form new trails. They know which other nests (when forming internest trails) or trees (when forming foraging trails) are reachable on the shortest path without intersecting other existing trails, and they choose the closest. Based on empirical observations, nests will not form foraging trails longer than 25 m. We know that ant workers regularly scout their home range, so it is plausible they know the position of available sources. We know that they factor the quality of the resource in their decision, but we have no data to assign a reliable quality metric to trees and nests, especially on the same scale. In this model implementation, all trees implicitly have the same quality, prompting ants to choose the closest.
+
+### Interaction\label{Interaction}
+Nests interact with trees or other nests via foraging or internest trails (see \ref{Entities, state variables, and scales} \nameref{Entities, state variables, and scales}). The model assumes that each nest has workers that forage from adjacent trees or nests. We measure their quantity by trail strength (number of ants/mm). Trail strengths are calculated by empirically fitted gravity formulae (see \ref{Gravity model} \nameref{Gravity model}). Ants acquire resources on foraging trails at a rate directly proportional to the trail strength (number of ants/mm). Workers can use internest trails in both directions. While empirical studies showed that ants carry resources from one nest to another @ellisInternestFoodSharing2016, we cannot separate the traffic from the trail's two nests based on our empirical data. Our model handles this by assigning the traffic (trail strength) between the two nests proportionally to their ***nest size***. Resource traffic rates on foraging and internest trails only affect the realised growth rate of the nest (see \ref{Updating nest sizes} \nameref{Updating nest sizes}). See \ref{Initialisation} for how the initial trail network is generated and \ref{New trail formation}  for how nests can form and \ref{Updating trail strengths} abandon trails.
+
+### Stochasticity\label{Stochasticity}
+Initial network generation (see \ref{Initialisation}) works stochastically to produce a variety of possible networks. We empirically estimated the distributions of key parameters such as the number of nests and trees, the number of trails and their lengths to ensure the generated networks resemble real ones (see \ref{Model validation}). Network dynamics (see \ref{Network dynamics}) use stochastic processes to place new nests and trails using the same mechanics as in \ref{Initialisation}  \nameref{Initialisation}. The creation and placement of new nests and trails use stochastic mechanics for the following reasons: a) The formation of these new entities cannot be directly and causally linked to a fixed value of any state or biological variables. In the case of new nest formation (see \ref{Nest budding} \nameref{Nest budding}), where nest size is known to have a positive effect @ellisEcologicalConsequencesColony2017, nest size is factored into the formula. b) While the model describes ant colonies at their highest structural level, we know that the nests’ emergent behaviour results from the individual behaviours of tens to hundreds of thousands of ants. It can be reasonable to describe their emergent behaviour at the nest level as stochastic. c) Stochasticity most likely plays a role in these processes. For example, ants may not necessarily find new resources when scouting, or the trail could get disturbed before a sufficient number of ants get recruited @domischWoodAntForaging2016. While a nest could be big enough to bud a new one @burnsLongitudinalStudyNest2020, it may lack the queens needed to establish it. Ellis et al. also showed that wood ants establish new nests at positions random with respect to tree locations @ellisRoleNonforagingNests2015. Stochastic processes are detailed in \ref{Initialisation} \nameref{Initialisation} and \ref{Network dynamics}  \nameref{Network dynamics}; the distributions used are in Table \ref{tab:estimated_parameters}.
+
+### Collectives\label{Collectives}
+There are two kinds of node-type collectives in the model, nests and trees, with their own entities representing them. Trails, with two different types, represent their connections. Foraging trails can connect nests to trees, and internest trails connect nests. See \ref{Entities, state variables, and scales} \nameref{Entities, state variables, and scales} for a detailed description.  
+
+### Observation\label{Observation}
+The networks’ state (see \ref{tab:State_variables} \nameref{tab:State_variables}) is saved in each iteration in all treatment groups, alongside details on which trees, trails and nests were affected by the exclusion at the time of the treatment. An individual files containing all this information is saved for each experiment. Reports on the individual experiments can be generated using an RMarkdown script provided in the code base. These reports contain information on the exclusion treatment, plots and tables on how nest sizes, trail strengths and network metrics have changed over time. Network measures (see \ref{Network measures}) for all treatments and iterations are calculated after the experiments have finished and stored in individual files similar to the experiment files.
+
+#### Network measures\label{Network measures}
+Weighted directed graphs represent the networks ($G$). Two types of vertices are distinguished nests ($N$) and trees ($T$). Undirected edges, called internest trails ($I$) can connect nests; and directed edges, called foraging trails ($F$) connect nests to trees.
+
+**Number of nests**  
+
+\setlength{\leftskip}{1cm}
+
+$|N|$  
+The size of the colony in nests.   
+
+\setlength{\leftskip}{0pt}
+
+
+**Number of used trees**  
+
+\setlength{\leftskip}{1cm}
+
+$|T|$  
+Number of trees contributing resources to the network.   
+
+\setlength{\leftskip}{0pt}
+
+
+**Number of internest trails**  
+
+\setlength{\leftskip}{1cm}
+
+$|I|$  
+The number of trails connecting nests.   
+
+\setlength{\leftskip}{0pt}
+
+
+**Number of foraging trails**  
+
+\setlength{\leftskip}{1cm}
+
+$|F|$  
+The number of trails connecting to trees.   
+
+\setlength{\leftskip}{0pt}
+
+
+**Trees to nests ratio**  
+
+\setlength{\leftskip}{1cm}
+
+$\frac{|T|}{|N|}$  
+Average number of trees per nests.   
+
+\setlength{\leftskip}{0pt}
+
+**Internest trails to nests ratio**  
+
+\setlength{\leftskip}{1cm}
+
+$\frac{|I|}{|N|}$  
+Average number of internest trails per nests.   
+
+\setlength{\leftskip}{0pt}
+
+**Foraging trails to nests ratio**  
+
+\setlength{\leftskip}{1cm}
+
+$\frac{|F|}{|N|}$  
+Average number of foraging trails per nests.   
+
+\setlength{\leftskip}{0pt}
+
+**Number of network components**  
+
+\setlength{\leftskip}{1cm}
+
+*Description:* The number connected subgraphs that are not part of any larger connected subgraphs @igraph.    
+*Interpretation:* The number of network fragments that do not share resources with other fragments.     
+
+\setlength{\leftskip}{0pt}
+
+**Network efficiency**  
+
+\setlength{\leftskip}{1cm}
+*Description:* The average of inverse shortest, distance-weighted path lengths between vertices over all pairs of nodes @latoraEconomicSmallworldBehavior2003.   
+
+$E(G)=\frac{1}{|V|(|V|-1)}\sum_{i\neq j \in G}\frac{1}{d_{ij}}$  
+where $d_{ij}$ is the shortest, distance weighted path length between vertices $i$ and $j$.
+
+*Interpretation:* Average efficiency of resource transfer in the network.     
+
+\setlength{\leftskip}{0pt}
+
+**Network efficiency - nests only**  
+
+\setlength{\leftskip}{1cm}
+*Description:* The average of inverse shortest, distance-weighted path lengths between nests over all pairs of nests @latoraEconomicSmallworldBehavior2003.   
+
+$E(M)=\frac{1}{|N|(|N|-1)}\sum_{i\neq j \in M}\frac{1}{d_{ij}}$  
+where $d_{ij}$ is the shortest, distance weighted path length between vertices $i$ and $j$.
+
+*Interpretation:* Average efficiency of resource transfer between nests.     
+
+\setlength{\leftskip}{0pt}
+
+
+**Network robustness**  
+
+\setlength{\leftskip}{1cm}
+*Description:* Average of relative network efficiency loss when an edge is removed @crucittiEfficiencyScalefreeNetworks2003.   
+
+$R(G)=\frac{1}{|E|}\sum_{e}\frac{E(G\setminus E_e)}{E(G)}$  
+
+*Interpretation:* Expected loss in resource transfer efficiency when a random trail is disbanded.     
+
+\setlength{\leftskip}{0pt}
+
+
+**Network robustness - nests only**  
+
+\setlength{\leftskip}{1cm}
+*Description:* Average of relative network efficiency loss between nests when an internest edge is removed @crucittiEfficiencyScalefreeNetworks2003.   
+
+$R(M)=\frac{1}{|I|}\sum_{i}\frac{E(M\setminus I_i)}{E(M)}$  
+
+*Interpretation:* Expected loss in resource transfer efficiency between nests when a random internest trail is disbanded.     
+
+\setlength{\leftskip}{0pt}
+
+**Network cost**  
+
+\setlength{\leftskip}{1cm}
+*Description:* The sum of the physical length of all edges @gastnerSpatialStructureNetworks2006.   
+
+$C(G)=\sum_e{l_e}$  
+
+*Interpretation:* The cost of maintaining the trail network.     
+
+\setlength{\leftskip}{0pt}
+
+**Network cost- nests only**  
+
+\setlength{\leftskip}{1cm}
+*Description:* The sum of the physical length of internest edges @gastnerSpatialStructureNetworks2006.   
+
+$C(M)=\sum_i{l_i}$  
+
+*Interpretation:* The cost of maintaining the internest trail network.     
+
+\setlength{\leftskip}{0pt}
+
+## Initialisation\label{Initialisation}
+
+The initial networks are generated by an algorithm modified after Lecheval et al. @lechevalForagingTrailsTransport2021 and use parameters, some of which are estimated from empirical data. \ref{Model validation} \nameref{Model validation} confirms that the following algorithm with the provided set of parameters generates of wood ant networks resembling real-life wood ant colonies.  
+
+```{r Initialisation parameters, include=FALSE}
+
+nest_mu <-  round(estimated_parameters[estimated_parameters$parameter_name =="Nests per colony" &estimated_parameters$distr_param == "mu","distr_param_est"],2)
+
+nest_size <-  round(estimated_parameters[estimated_parameters$parameter_name =="Nests per colony" &estimated_parameters$distr_param == "size","distr_param_est"],2)
+
+internest_dist_shape <- round(estimated_parameters[estimated_parameters$parameter_name =="Internest trail length" &estimated_parameters$distr_param == "shape","distr_param_est"],2)
+
+internest_dist_rate <- round(estimated_parameters[estimated_parameters$parameter_name =="Internest trail length" &estimated_parameters$distr_param == "rate","distr_param_est"],2)
+
+nestsize_shape <- round(estimated_parameters[estimated_parameters$parameter_name =="Nest size" &estimated_parameters$distr_param == "shape","distr_param_est"],2)
+
+nestsize_rate <- round(estimated_parameters[estimated_parameters$parameter_name =="Nest size" &estimated_parameters$distr_param == "rate","distr_param_est"],2)
+
+foraging_lambda <- round(estimated_parameters[estimated_parameters$parameter_name =="Number of foraging trails per nest" &estimated_parameters$distr_param == "lambda","distr_param_est"],2)
+
+```
+
+
+Trees are randomly placed on a $`r not_estimated_parameters$map_width_m` \times `r not_estimated_parameters$map_width_m`$ m map using the "Simple Sequential Inhibition" algorithm from the `spatstat` package (`spatstat.random::rSSI`) @spatstat. The inhibitory distance between trees is `r not_estimated_parameters$rSSI_inhibit_dist_m` m, and their density is `r not_estimated_parameters$rSSI_density_tree_per_sq` trees per $m^2$.
+
+The number of nests is drawn from an empirical negative binomial distribution ($\mu = `r nest_mu`$, $size = `r nest_size`$). The range is restricted to the empirically observed range of nest numbers $[4,20]$  to prevent networks from taking extreme values not representative of real-life scenarios. The first nest is placed at coordinates $(0,0)$. The following nests are placed sequentially, relatively to the position of the previous nest. The distances between nests are drawn from an empirical gamma distribution ($shape = `r internest_dist_shape`$, $rate = `r internest_dist_rate`$). Distances falling below `r not_estimated_parameters$internest_min_length_m` m are redrawn from a uniform distribution of $[1.5,2]$ m for the same reason nest numbers can be redrawn. Nest sizes (1000 ants) are also randomly drawn from an empirical gamma distribution ($shape = `r nestsize_shape`$, $rate = `r nestsize_rate`$) but capped at the $95^{th}$ percentile of empirical nest size distribution.
+
+Internest trails between nests and foraging trails to trees are randomly established. Nest form their single initial internest trail in sequence. The distances from the focal nest to all nests are calculated. A length is drawn from the empirical internest trail length distribution, and the nest closest to this distance is chosen if it is reachable in a straight line without crossing any existing trails. If it is not, the process is repeated a maximum of `r not_estimated_parameters$internest_rejection.nb` times before giving up.
+
+Foraging trails are established after the internest trails. The number of foraging trails for each nest is randomly drawn from an empirical Poisson distribution ($\lambda= `r foraging_lambda`$), but the colony must have at least two foraging trails in total. Nests get their foraging trails sequentially in reverse order of their size (larger nests come first). They connect to the closest available tree, reachable without crossing existing trails.
+
+Trail strengths are initialised with empirical gravity formulae parameterised separately for foraging and internest trails (see \ref{Gravity model} \nameref{Gravity model} for details). With this final step, the algorithm has set the initial values for all state variables as described in \ref{Entities, state variables, and scales} \nameref{Entities, state variables, and scales}.
+
+## Input data\label{Input data}  
+While our model is formulated and parameterised based on previous studies and empirical data on real-life wood ant networks, it does not take any direct inputs. We describe the parametrisation serving the validity of our model in \ref{Model parameters}. We describe the perturbation experiments we conducted in \ref{Experiments} \nameref{Experiments}.
+
+## Submodels\label{Submodels}  
+
+### Network dynamics\label{Network dynamics}  
+  
+The state variables (see \ref{Entities, state variables, and scales}) of the networks are updated in each iteration based on the previous state and processes described in the following algorithm (see also \ref{Process overview and scheduling} \nameref{Process overview and scheduling}).    
+
+#### Updating nest sizes\label{Updating nest sizes}  
+  
+Nest growth is based on the resource income of the nests. Internest trails are bidirectional in the rest of the model, and their strength represents the combined traffic between nests. However, to calculate resource exchange between nests on internest trails, their directionality must be considered at this point. Directional internest trail strengths are calculated by splitting the combined internest trail strength between the nests proportionally to the nest size. The reasoning is that the two nests connected by the trail are responsible for the traffic proportionally to their size, and traffic brings resources for the given nest. A focal nest's total resource income rate ($I$) is calculated as the sum of all foraging and directional internest trail strengths. Resource depletion rate refers to the rate at which ants from other nests take resources from the focal nest. To calculate the total resource depletion rate ($D$), we add all the directional internest trail strength coming from other nests to the focal nest. The equation for the realised growth rate ($r$) scales the difference of total resource income and depletion rates between $[-1,1]$ and multiplies it by the potential growth rate ($r_{max}$) of nests. This part expresses that if no food is taken away from the nest ($D=0$), it can grow at its maximum potential. If the total resource depletion rate exceeds the income ($D>I$), it cannot grow, and the nest’s population shrinks. The realised growth rate ($r$) is also reduced by a constant loss rate ($V= `r not_estimated_parameters$colony_loss_rate`$) to account for population loss due to death.
+
+$${r=r_{max}\frac{I-D}{I+D}-V}$$  
+
+The updated best size ($N_{t+1}$) is calculated from a discrete logistic growth equation, where $N_t$ is the current nest size, $r$ is the realised growth rate, and $K$ is the nests' carrying capacity (`r format(round(not_estimated_parameters$K*1000),scientific=FALSE)` ants) of the nests.
+
+$${N_{t+1}=N_t+rN_t(\frac{K-N_t}{K})}$$
+
+#### Nest abandonment\label{Nest abandonment}  
+  
+Nests can be abandoned after their size has been updated. Nests with size below the $5^{th}$ percentile of the gamma distribution fitted on empirical nest sizes (`r format(round(not_estimated_parameters$nest_abandonment_threshold*1000),scientific=FALSE)` ants) get abandoned. This results in their nest size being set to 0 and their status to *“abandoned”*. All trails associated with the nests also get abandoned; their trail strength is set to 0 and their status to *“abandoned”*.  
+
+#### Nest budding\label{Nest budding}   
+
+Active (not abandoned) nests can stochastically establish new nests, referred to as *“budding”*. A Bernoulli trial decides if a nest buds ($B_i$) in the given iteration with the probability $P(B_i)$. $P(B_i)$ equals the maximum probability of budding ($B_{max}= `r not_estimated_parameters$max_budding_prob`$) times the quantile of the nest in the gamma distribution fitted on empirical nest sizes. This formula makes the probability of budding proportional to nest size.  
+
+From each nest that buds in the given iteration, a random distance and angle is drawn as in \ref{Initialisation} \nameref{Initialisation}. A new distance and direction is randomly drawn if the trail intersects existing trails. This process can be repeated a maximum of `r not_estimated_parameters$max_budding_tries` times. No new nest gets created if no non-intersecting position is found in `r not_estimated_parameters$max_budding_tries` trials. If the trail does not intersect existing ones, the new nest is established with an internest trail connecting it to the budded nest. The initial nest size of the new nest is `r format(round(not_estimated_parameters$new_nest_initial_size*1000),scientific=FALSE)` ants.  
+
+#### New trail formation\label{New trail formation}
+
+Newly established nests draw the number of foraging trails they will from the same empirical Poisson distribution ($\lambda= `r foraging_lambda`$) used during \ref{Initialisation} \nameref{Initialisation}. Existing active nests can get a single new foraging trail with a probability of `r not_estimated_parameters$new_foraging_trail_prob`.  
+
+Each not newly budded nest can form a new foraging trail as a result of Bernoulli trials with a probability of `r not_estimated_parameters$new_internest_trail_prob`. Nests that drew forming a new internest trail connect to the nearest nest @ellisInternestFoodSharing2016 available without intersecting any already existing trails. If no other nest is reachable in that way, the trail does not get created.
+
+#### Updating trail strengths\label{Updating trail strengths}
+Lastly, trail strengths are updated using the empirically fitted gravity formulae using the nest sizes and trail list updated in the current iteration (see \ref{Gravity model} \nameref{Gravity model}).
+
+### Experiments\label{Experiments}
+Our experiments with the model aim to simulate the dynamic and structural changes happening after excluding trees of different importance, permanently or temporarily, from the network. Throughout the experiment, each simulated network receives seven different treatments in parallel according to the type (*control* with no perturbation; *sustained*, i.e. permanent; *reintroduced*, i.e. temporary) and the target (the *strongest*, the *weakest*, and a *randomly* excluded tree).  
+
+The experiments start by generating a network (see \ref{Initialisation} \nameref{Initialisation}). The simulation runs (see \ref{Network dynamics}  \nameref{Network dynamics}) with this single control network for the length of the burn-in phase from $t=-8$ to $t=0$. At $t=0$, the timestep of the perturbation treatments, the current state of the *control* network gets duplicated three times for the three different target treatments. Trees are selected for exclusion based on their cumulative foraging strength. We chose *cumulative* trail strength because trees can receive multiple foraging trails from different nests. Thus, examining individual trail strengths does not accurately measure the tree’s importance in the network. In the *strongest* treatment, the tree with the largest, and in the *weakest*, the tree with the lowest cumulative foraging trail strength gets excluded. In the *random* treatment, a randomly chosen tree is excluded. Excluded trees are chosen independently of each other based on these criteria and are not prevented from coinciding. The exclusion is implemented by setting the tree’s status to *abandoned*, meaning that it will not be able to receive new foraging trails from nests. Its existing foraging trails also get *abandoned*, and their trail strength is set to 0. 
+
+The simulation continues for a season (28 iterations/weeks) with these four groups (*control, weakest, random and strongest*). At the end of $t=28$, the three treated networks get duplicated. In one version, the tree excluded at $t=0$ gets *reintroduced*, meaning that its status is set back to *active*. The reintroduction further allows the nests to form foraging trails with the tree, but they are not actively prompted to do that. These trees remain excluded in the *sustained* treatments. From this point ($t=29$) the simulation runs in parallel in seven different versions (*control, weakest sustained, weakest reintroduced, random sustained, random reintroduced, strongest sustained, strongest reintroduced*) for two more seasons (to $t=84$).
+
+# Empirical data and model parametrisation\label{Empirical data and model parametrisation}
+
+## Empirical data\label{Empirical data}
+We used data on nine polydomous wood ant *(Formica lugubris)* colonies located at Longshaw Estate in the Peak District, UK (N53°18'33", E1°36'96") collected between 2012 and 2021 comprising a total of 38–184 nests per year. We mapped the colonies following a protocol from Ellis & Robinson @ellisRoleNonforagingNests2015. We surveyed the colonies on warm and sunny days in the late summer (July–August) to observe them at their peak activity. We recorded the spatial position of active nests and the trees they used for foraging. We noted all internest trails connecting nests and foraging trails between nests and trees and measured the length of the trails. To quantify the strength of these trails, we measured the distance needed to count ten foraging ants, measuring at a point as close to the midway point along the trail as possible. The minimum detectable trail strength was 0.0025 ants/mm (10 ants in 4 m); trails weaker than this could not be reliably distinguished from wandering ants. The maximum measurable trail strength was 1 ant/mm (10 ants in 1 cm); ant densities above this limit could not be reliably counted in the field. We estimated the number of ants inhabiting the nest (nest size) from its physical size using the mound-volume technique of Chen and Robinson @chenComparisonMarkRelease2013. The data we used are available in the model code.
+
+Burns et al. @burnsAntColonyNest2021 started an exclusion experiment on these networks in 2017 that serves as a basis for our simulation experiments. In January 2017, while the ants were still dormant, they fitted an exclusion collar on a suitable tree with the strongest total trail strength. This collar prevented the ants from using the tree as a foraging resource. This was replicated for 5 colony networks, with an additional 5 colony networks as unmanipulated controls. They left the collar in place for a year before removing it to study the effect of the temporary exclusion of the tree on the colonies. One of the exclusion treatments failed, resulting in a final set of 9 colony networks. See Burns et al. @burnsAntColonyNest2021 for more details.
+
+We used the long-term data set of the nine colonies in Burns et al. @burnsAntColonyNest2021 to parameterise (see \ref{Model parameters}) and validate (see \ref{Model validation}) our model. The years before the start of the perturbation experiment (2012–2016) served as *Estimation data* for the parameters. We validated the control treatment groups in simulated networks against the five control colonies from Burns et al.’s experiment between 2017–2021 (*Control validation data*). The strongest reintroduction treatment in the simulation experiment imitates the treatment in Burns et al. @burnsAntColonyNest2021. We used that group to check the validity of our simulated exclusion treatments and checked them used against the colonies in the tree exclusion treatment group’s 2017–2021 data (*Exclusion validation data*). All data used are available in the model code.
+
+## Model parameters\label{Model parameters}
+We used the fitdistrplus 1.1-8 @fitdistrplus R package to fit distributions for the empirically estimated parameters with the maximum likelihood method. We initially fitted gamma, log-normal and exponential distributions on the continuous and Poisson, negative binomial and geometric distributions on the discrete variables. We evaluated fit by inspecting the density and cumulative density function plots. We chose the distribution with the best visual fit and lowest AIC value. Table \ref{tab:estimated_parameters} presents the used distributions with their estimated parameters for each variable. Table \ref{tab:not_estimated_parameters} contains the parameters that were not estimated from empirical data. We assigned biologically plausible values for these parameters so the simulated networks resemble the structure and dynamics of real-life networks well (see \ref{Model validation} \nameref{Model validation}).
+
+
+```{r estimated_parameters}
+kable(estimated_parameters |> 
+        filter(parameter_name!="Number of trails per nest") |> 
+  mutate(distribution=fct_recode(factor(distribution),
+                                 `Negative binomial`="nbinom",
+                                 Gamma = "gamma",
+                                 Poisson = "pois")), digits = 2,
+  col.names = c("Parameter name", "Distribution", "Distribution parameter", "Distribution parameter estimate", "Distribution parameter estimate SE"),
+  row.names = FALSE,
+  caption = "Estimated model parameters, the fitted distributions with parameter estimates and their standard errors. ",
+  format="latex", booktabs = TRUE) |> 
+  column_spec(1,width = "3cm") |> 
+  column_spec(2,width = "2cm") |> 
+  column_spec(3,width = "2cm") |> 
+  column_spec(4,width = "2cm") |> 
+  column_spec(5,width = "2cm") |> 
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r not_estimated_parameters}
+
+enframe(not_estimated_parameters) |>
+  unnest(cols = c(value)) |>
+  select(-name) |> 
+  mutate(
+    `Parameter name` = c(
+      "Nest carrying capacity",
+      "Maximum foraging trail length",
+      "Nest abandonment threshold",
+      "Width of the map",
+      "Tree inhibition distance (used in rSSI())",
+      "Density of trees",
+      "Minimum distance for newly placed nests (m)",
+      "Upper-bound used in new nest position generation distance redraw (m)",
+      "Maximum initial size for nests as a portion of K (carrying capacity)",
+      "Maximum number of attempts to place a potential new internest trail",
+      "Constant nest size loss rate",
+      "Maximum growth rate of nests",
+      "Maximum probability of a nest budding in each iteration",
+      "Maximum number of attempts to place a potential nest",
+      "Starting nest size of newly budded nests (1000-s of ants)",
+      "Probability of a nest forming a new foraging trail",
+      "Probability of a nest forming a new internest trail",
+      "Trail abandonment threshold",
+      "Burn-in length"
+      ),
+    unit=c(
+      "1000-s of ants",
+      "m",
+      "1000-s of ants",
+      "m",
+      "m",
+      "$/m^{2}$",
+      "m",
+      "m",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "1000-s of ants",
+      "",
+      "",
+      "ants/mm",
+      "iterations (weeks)"
+      
+    )
+  ) |> 
+  relocate(`Parameter name`) |> 
+  kable(escape = FALSE, digits = 4,
+                    caption = "Not estimated model parameters and their assigned values.",
+        format="latex", booktabs = TRUE) |> 
+  column_spec(1,width = "8cm") |> 
+  column_spec(2,width = "2cm") |> 
+  column_spec(3,width = "3cm") |> 
+  kable_styling(latex_options = "HOLD_position")
+
+
+```
+
+
+
+## Gravity model\label{Gravity model}
+The model calculates trail strengths using empirically fitted gravity formulae. This approach is widely applied to describe traffic in networks @lenormandSystematicComparisonTrip2016. We estimated the parameters of the gravity model with a power distance decay function separately for internest and foraging trails by minimising the mean squared error of the function.
+
+Gravity formula for internest trails:  
+$${s=G\times\frac{(N_1\times N_2)^{\alpha}}{d^\beta}}$$  
+$${s=`r round(gravity_parameters[gravity_parameters$trail_type=="internest","G_pow"], 3)`\times\frac{(N_1\times N_2)^{`r round(gravity_parameters[gravity_parameters$trail_type=="internest","alpha_pow"], 3)`}}{d^{`r round(gravity_parameters[gravity_parameters$trail_type=="internest","beta_pow"], 3)`}}}$$ 
+ 
+
+Gravity formula for foraging trails:  
+$${s=G\times\frac{N^{\alpha}}{d^\beta}}$$  
+$${s=`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","G_pow"], 3)`\times\frac{N^{`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","alpha_pow"], 3)`}}{d^{`r round(gravity_parameters[gravity_parameters$trail_type=="foraging","beta_pow"], 3)`}}}$$ 
+
+where $s$ is trail strength in ants/mm, $N_x$-s are nest sizes in 1000 ants, $d$ is trail length in m. 
+
+# Model validation\label{Model validation}
+See \ref{Empirical data} \nameref{Empirical data} for the description of the Estimation, Control validation and Exclusion validation data sets.  
+
+## Structural similarity of simulated control networks\label{Structural similarity of simulated control networks}
+To assess whether our simulation model produces structurally similar networks to real ones and whether they keep these properties in the time frame of the simulations, we calculated our selected network measures (see \ref{Network measures}) on both our unperturbed empirical and simulated networks. Figure \ref{fig:control_comparison_plot} shows the network measures of real-life networks in our *Estimation* and *Control validation data* and for our simulated control networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of seasons). Similarly, Figure \ref{fig:control_num_components_nests_plot} shows the relative frequencies of the number of network components. While the median values for our simulations and the empirical networks are very similar, the simulations show a greater range in values and a few of our simulated networks displayed considerably different efficiency and robustness values than the empirical range (see Figure \ref{fig:control_comparison_plot}). To improve the visibility of these subplots, Figure \ref{fig:control_comparison_plot_no_outliers} shows these subplots by only showing efficiency values $<2$ and robustness values $>0.5$. Table \ref{tab:effciency_outliers_table} presents descriptive statistics and the number of these excluded data points.  
+
+```{r control_comparison, include=FALSE, cache=TRUE}
+control_comparison_data <-
+  bind_rows(
+    simulation_stats |>
+      filter(t %in% time_steps) |> 
+      filter(treatment == "control") |>
+      mutate(t = paste0("t=", t)),
+    
+    empirical_stats |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |> 
+      filter(dataset %in% c("Empirical control",
+                            "Estimation")) |>
+      mutate(dataset = ifelse(dataset=="Empirical control","Control validation",dataset),
+             t = paste(dataset, "data"))
+  ) |>
+  mutate(t = factor(t),
+         dataset = paste(dataset, "data")) |>
+    pivot_longer(-c(date, dataset, colony,  t, treatment),
+                 names_to = "stat",
+                 values_to = "stat_values")|>
+  left_join(stat_keys_val, by = "stat")  
+    
+control_comparison_plot <-
+  control_comparison_data |>
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=3) +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+outlier_cutoff_top <- 2
+outlier_cutoff_bottom <- 0.5
+
+control_comparison_plot_no_outliers <-
+  control_comparison_data |>
+  filter(stat %in% c("network_efficiency", "network_efficiency_nests"),
+         stat_values<outlier_cutoff_top) |> 
+  bind_rows(
+    control_comparison_data |>
+      filter(stat %in% c("network_robustness"),
+             stat_values>outlier_cutoff_bottom)
+  ) |> 
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y") +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+effciency_outliers <- 
+control_comparison_data |>
+  filter(stat %in% c("network_efficiency", "network_efficiency_nests"),
+         stat_values>=outlier_cutoff_top) |> 
+  bind_rows(
+    control_comparison_data |>
+      filter(stat %in% c("network_robustness"),
+             stat_values<=outlier_cutoff_bottom)
+  ) 
+
+effciency_outliers_table <- 
+effciency_outliers |>   
+calculate_descriptive(y=stat_values, stat_keys, dataset, t, treatment) |> 
+  select(-c(SD, Var_to_Mean, CV, LQ, Median, UQ, IQR, treatment)) |> 
+  relocate(N, .after = "t")
+
+# Number of components
+control_num_components_nests_plot <-
+  control_comparison_data |>
+  filter(stat == "num_components_nests") |>
+  ggplot(aes(
+    group = t,
+    # x = t,
+    x = stat_values,
+    y = after_stat(density),
+    fill = dataset
+  )) +
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(breaks = seq(0:(
+    control_comparison_data |>
+      filter(stat == "num_components_nests") |>
+      summarise(max = max(stat_values)) |>
+      pull()
+  ))) +
+  facet_wrap(vars(t)) +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 0,
+      hjust = 0.3,
+      vjust = 0.5
+    ),
+  ) +
+  xlab("Number of network components") +
+  ylab("Relative frequency")
+```
+
+```{r control_comparison_plot, echo=FALSE, warning=FALSE,fig.cap="Network measures calculated on \\textit{Estimation} and \\textit{Control validation data} and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). \\label{fig:control_comparison_plot}", fig.width=9, fig.height=12}
+control_comparison_plot
+```
+
+```{r control_comparison_plot_no_outliers, echo=FALSE, warning=FALSE,fig.cap="Network efficiency ($<2$) and robustness ($>0.5$) calculated on \\textit{Estimation} and \\textit{Control validation data} and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons) The outlying points were excluded to improve the visibility of the plot. See Figure \\ref{fig:control_comparison_plot} for the original plot and Table \\ref{tab:effciency_outliers_table} for information the outlying points. \\label{fig:control_comparison_plot_no_outliers}", fig.width=9, fig.height=6}
+control_comparison_plot_no_outliers
+```
+
+
+```{r effciency_outliers_table}
+kable(effciency_outliers_table, digits = 2,
+      col.names = c("Network measure", "Dataset", "Timestep", "N", "Mean","Min","Max"),
+      row.names = FALSE,
+      caption = "Statistics on outlying points excluded from Figure \\ref{fig:control_comparison_plot_no_outliers}. Sample sizes \\textit{(N)}, means, minima \\textit{(Min)} and maxima \\textit{(Max)} are reported.",
+      format="latex", booktabs = TRUE) |> 
+  column_spec(1,width = "3cm") |> 
+  column_spec(2,width = "3cm") |> 
+  column_spec(3,width = "1cm") |> 
+  column_spec(4,width = "1cm") |> 
+  column_spec(5,width = "1cm") |> 
+  column_spec(6,width = "1cm") |> 
+  kable_styling(latex_options = c("HOLD_position","scale_down"))
+```
+
+
+```{r control_num_components_nests_plot, echo=FALSE, warning=FALSE,fig.cap="Relative frequency of the number of network components of networks from the \\textit{Estimation} and \\textit{Control validation data} and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). \\label{fig:control_num_components_nests_plot}", fig.width=9, fig.height=10}
+control_num_components_nests_plot
+```
+
+## Dynamic similarity of simulated control networks\label{Dynamic similarity of simulated control networks}
+To see whether our simulation dynamics capture year-to-year changes in network properties, we calculated the relative yearly changes in the used network measures for each network in both the Estimation and Control validation data sets. We compared these values to the seasonal changes (at $t=28, 56, 84$ starting from $t=0$) in simulated networks corresponding to the same timeframe. Figure \ref{fig:control_comparison_plot_combined} a presents the full range of observed changes. As outlying points can distort subplots of  Figure \ref{fig:control_comparison_plot_combined} a, Figure \ref{fig:control_comparison_plot_combined} b only shows changes between $[-100\%, 100\%]$ to allow for better visibility of this range.
+
+```{r control_comparison_dyn, include=FALSE, cache=TRUE}
+control_comparison_data_dyn <-
+  bind_rows(
+    simulation_stats |>
+      filter(t %in% time_steps) |>
+      filter(treatment == "control") |>
+      pivot_longer(
+        -c(dataset, colony,  t, treatment),
+        names_to = "stat",
+        values_to = "stat_values"
+      ) |>
+      left_join(stat_keys_val, by = "stat") |>
+      group_by(colony, stat) |>
+      mutate(stat_values_lag = lag(stat_values)) |>
+      arrange(stat, colony, t) |>
+      mutate(
+        stat_values_rel_change = ((stat_values - stat_values_lag) / stat_values_lag) * 100,
+        stat_values_abs_change = stat_values - stat_values_lag
+      ) |>
+      filter(!is.na(stat_values_rel_change)),
+    
+    empirical_stats |>
+      tibble() |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |>
+      filter(dataset %in% c("Empirical control",
+                            "Estimation")) |>
+      mutate(dataset = ifelse(dataset=="Empirical control","Control validation",dataset),
+             t = year(date)) |>
+      select(-date) |>
+      relocate(t, .after = colony) |>
+      pivot_longer(
+        -c(dataset, colony,  t),
+        names_to = "stat",
+        values_to = "stat_values"
+      ) |>
+      left_join(stat_keys_val, by = "stat") |>
+      group_by(colony, stat, dataset) |>
+      mutate(stat_values_lag = lag(stat_values)) |>
+      arrange(stat, colony, dataset, t) |>
+      mutate(
+        stat_values_rel_change = ((stat_values - stat_values_lag) / stat_values_lag) * 100,
+        stat_values_abs_change = stat_values - stat_values_lag
+      ) |>
+      filter(!is.na(stat_values_rel_change))
+  ) |> 
+  mutate(dataset = paste(dataset, "data"))
+
+control_comparison_data_dyn$stat_keys <- 
+gsub("- ", "-\n",control_comparison_data_dyn$stat_keys)
+
+
+control_comparison_plot_dyn <-
+  control_comparison_data_dyn |>
+  ggplot(aes(
+    group = dataset,
+    x = dataset,
+    y = stat_values_rel_change,
+    fill = dataset
+  )) +
+  geom_hline(yintercept = 0,
+             colour = "grey70",
+             linetype = "dashed") +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=2) +
+  ylab("Yearly relative change (%) in network measure value") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+### Outlier plot
+outlier_bottom <- -100
+outlier_top <- 100
+
+control_comparison_data_dyn_no_out <- 
+control_comparison_data_dyn |> 
+  filter(between(stat_values_rel_change, outlier_bottom, outlier_top)) 
+
+control_comparison_plot_dyn_no_out <-
+  control_comparison_data_dyn_no_out |>
+  ggplot(aes(
+    group = dataset,
+    x = dataset,
+    y = stat_values_rel_change,
+    fill = dataset
+  )) +
+  geom_hline(yintercept = 0,
+             colour = "grey70",
+             linetype = "dashed") +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=2) +
+  ylab("Yearly relative change [-100%, 100%] in network measure value") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  ) 
+
+control_comparison_plot_combined <- 
+control_comparison_plot_dyn+
+  control_comparison_plot_dyn_no_out+ 
+plot_layout(guides = 'collect')+
+    plot_annotation(tag_levels = 'a')&
+  theme(legend.position = "bottom")
+```
+
+```{r control_comparison_plot_combined, echo=FALSE, warning=FALSE,fig.cap="Relative yearly changes in network measures calculated on \\textit{Estimation} and \\textit{Control validation data} and our relative seasonal changes in simulated control networks (at $t=28, 56, 84$ starting from $t=0$). Subfigure \\textbf{a} shows the full range of changes, \\textbf{b} shows changes between $[-100\\%, 100\\%]$ to better show the central values. \\label{fig:control_comparison_plot_combined}", fig.width=9, fig.height=12}
+control_comparison_plot_combined
+```
+
+## Similarity of simulated networks with resource exclusion\label{Structural similarity of simulated networks with resource exclusion}
+To evaluate our model's capability to describe the effects of resource exclusion on wood ant networks, we compared the four networks with tree exclusion from Burns et al.'s @burnsAntColonyNest2021 study (*Exclusion validation data*, see \ref{Empirical data and model parametrisation}) with the corresponding treatment in our simulation (see \ref{Experiments}). Burns et al. @burnsAntColonyNest2021 excluded a suitable tree with the strongest total trail strength from the network at the end of 2016 for a year. We compare the 2017 late-season state of these four empirical networks to networks with the *strongest exclusion with reintroduction* treatment at $t=28$. Both dates mark the time point corresponding to a year after the tree exclusion (*Year 1*). We also compared data from 2018 to $t=56$ (*Year 2*), the first year after the tree reintroduction and 2019 to $t=84$ (*Year 3*). Figure \ref{fig:exclusion_comparison_plot} compares the network measures, and Figure \ref{fig:exclusion_num_components_nests_plot} shows the relative frequencies of the number of network components. 
+
+```{r exclusion_comparison, include=FALSE, cache=TRUE}
+exclusion_comparison_data <-
+  bind_rows(
+    simulation_stats |>
+      filter(treatment == "strongest_re",
+             t %in% c(28, 56, 84)) |>
+      mutate(
+        year = paste("Year", t / 28),
+        t = paste0("t=", t),
+        dataset = "Simulation: strongest exclusion with reintroduction"
+      ),
+    
+    empirical_stats |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |> 
+      filter(dataset == "Empirical exclusion") |>
+      mutate(t = year(date),
+             dataset = ifelse(dataset=="Empirical exclusion","Exclusion validation data",dataset)) |>
+      filter(t %in% c(2017, 2018, 2019)) |>
+      mutate(year = paste("Year", t - 2016),
+             t = factor(t))
+  ) |>
+  pivot_longer(
+    -c(date, dataset, colony,  t, treatment, year),
+    names_to = "stat",
+    values_to = "stat_values"
+  ) |>
+  left_join(stat_keys_val, by = "stat") |> 
+  mutate(t = factor(
+    t,
+    levels = c(
+      "2017",
+      "t=28",
+      "2018",
+      "t=56",
+      "2019",
+      "t=84"
+    )
+  ))
+
+
+exclusion_comparison_plot <-
+  exclusion_comparison_data |>
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=3) +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  ) 
+
+exclusion_num_components_nests_plot <-
+  exclusion_comparison_data |>
+  filter(stat == "num_components_nests") |>
+  ggplot(aes(
+    group = t,
+    # x = t,
+    x = stat_values,
+    y = after_stat(density),
+    fill = dataset
+  )) +
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(breaks = seq(0:(
+    control_comparison_data |>
+      filter(stat == "num_components_nests") |>
+      summarise(max = max(stat_values)) |>
+      pull()
+  ))) +
+  facet_grid(rows = vars(dataset), cols = vars(year)) +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 0,
+      hjust = 0.3,
+      vjust = 0.5
+    ),
+  ) +
+  xlab("Number of components") +
+  ylab("Relative frequency")
+```
+
+```{r exclusion_comparison_plot, echo=FALSE, warning=FALSE,fig.cap="Network measures calculated on \\textit{Exclusion validation data} and our simulated networks with the \\textit{strongest exclusion with reintroduction} treatment at highlighted timesteps (2017 and $t=28$: one year after the tree exclusion, 2018 and $t=28$: two years after the exclusion and one year after the reintroduction, 2019 and $t=84$ two years after the reintroduction). \\label{fig:exclusion_comparison_plot}", fig.width=9, fig.height=12}
+exclusion_comparison_plot
+```
+
+```{r exclusion_num_components_nests_plot, echo=FALSE, warning=FALSE,fig.cap="Relative frequency of the number of network components of networks from the \\textit{Exclusion validation data} and our simulated networks with the \\textit{strongest exclusion with reintroduction} treatment at highlighted timesteps (2017 and $t=28$: one year after the tree exclusion, 2018 and $t=28$: two years after the exclusion and one year after the reintroduction, 2019 and $t=84$ two years after the reintroduction). \\label{fig:exclusion_num_components_nests_plot}", fig.width=9, fig.height=10}
+exclusion_num_components_nests_plot
+```
+
+
+# Software and code availability\label{Software and code availability}
+All code used to formulate, run and evaluate our simulations is available online. The empirical data and the code for parametrisation are in the `./Input` folder. The core model code is in the `Model_code.R` script file. Simulation experiments can be performed by executing the code in `Run_simulations.R`. We used R 4.2.3 @Rbase and the following packages: *brainGraph 3.0.0* @brainGraph, *doParallel 1.0.17* @doParallel, *emmeans 1.8.5* @emmeans, *fitdistrplus 1.1-8* @fitdistrplus, *flexdashboard 0.6.1* @flexdashboard, *ggrepel 0.9.3* @ggrepel, *igraph 1.4.1* @igraph, *knitr 1.42* @knitr, *lazyeval 0.2.2* @lazyeval, *parallel 4.2.3* @Rbase, *patchwork 1.1.2* @patchwork, *rmarkdown 2.21* @rmarkdown, *readxl 1.4.2* @readxl, *RColorBrewer 1.1-3* @RColorBrewer, *spatstat 3.0-3* @spatstat, *tidyverse 2.0.0* @tidyverse.
+
+\newpage
+# References
+
+  

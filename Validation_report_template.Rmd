@@ -1,0 +1,532 @@
+---
+title: "Validation report"
+output:
+  html_document:
+    toc: true
+params:
+  simulation_stats: "."
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+
+options(dplyr.summarise.inform = FALSE)
+
+simulation_stats <- params$simulation_stats
+
+empirical_stats <-
+  readRDS("./Output/Empirical_statistics/empirical_stats.rds")
+
+not_estimated_parameters <- 
+  readRDS("./Output/Model_parameters/not_estimated_parameters.rds")
+
+```
+
+```{r Stat keys, include=FALSE}
+time_steps <- c((-not_estimated_parameters$burn_in_length),
+                0, 28, 56, 84)
+
+stat_names  <-  c(
+  "Number of nests",
+  "Number of used trees",
+  "Number of foraging trails",
+  "Number of internest trails",
+  "Trees to nests ratio",
+  "Internest trails to nests ratio",
+  "Foraging trails to nests ratio",
+  "Number of components - nests only",
+  "Network efficiency",
+  "Network efficiency - nests only",
+  "Network robustness",
+  "Network robustness - nests only",
+  "Network cost",
+  "Network cost - nests only"
+)
+
+stat_keys_val <-
+  data.frame(
+    stat = c(
+      "num_nests",
+      "num_trees",
+      "num_foraging",
+      "num_internest",
+      "trees_to_nests_rat",
+      "internest_to_nests_rat",
+      "foraging_to_nests_rat",
+      "num_components_nests",
+      "network_efficiency",
+      "network_efficiency_nests",
+      "network_robustness",
+      "network_robustness_nests",
+      "network_cost",
+      "network_cost_nests"
+    ),
+    stat_keys = factor(stat_names, levels = stat_names)
+  )
+
+calculate_descriptive = function(data, y, ...) {
+  y <- enquo(y)
+  data %>%
+    group_by(.dots = lazyeval::lazy_dots(...)) %>% 
+    summarize(Mean = mean(!!y, na.rm=T),
+              N=n(),
+              SD=sd(!!y, na.rm=T),
+              Var_to_Mean=var(!!y, na.rm=T)/mean(!!y, na.rm=T),
+              CV=sd(!!y, na.rm=T)/mean(!!y, na.rm=T),
+              Min=quantile(!!y,0, na.rm=T),
+              LQ=quantile(!!y,0.25, na.rm=T),
+              Median=quantile(!!y,0.5, na.rm=T),
+              UQ=quantile(!!y,0.75, na.rm=T),
+              Max=quantile(!!y,1, na.rm=T),
+              IQR=quantile(!!y,0.75, na.rm=T)-quantile(!!y,0.25, na.rm=T)
+    )
+}
+
+```
+
+## Structural similarity of simulated control networks 
+
+```{r control_comparison, include=FALSE, cache=TRUE}
+control_comparison_data <-
+  bind_rows(
+    simulation_stats |>
+      filter(t %in% time_steps) |> 
+      filter(treatment == "control") |>
+      mutate(t = paste0("t=", t)),
+    
+    empirical_stats |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |> 
+      filter(dataset %in% c("Empirical control",
+                            "Estimation")) |>
+      mutate(dataset = ifelse(dataset=="Empirical control","Control validation",dataset),
+             t = paste(dataset, "data"))
+  ) |>
+  mutate(t = factor(t),
+         dataset = paste(dataset, "data")) |>
+    pivot_longer(-c(date, dataset, colony,  t, treatment),
+                 names_to = "stat",
+                 values_to = "stat_values")|>
+  left_join(stat_keys_val, by = "stat")  
+    
+control_comparison_plot <-
+  control_comparison_data |>
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=3) +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+outlier_cutoff_top <- 2
+outlier_cutoff_bottom <- 0.5
+
+control_comparison_plot_no_outliers <-
+  control_comparison_data |>
+  filter(stat %in% c("network_efficiency", "network_efficiency_nests"),
+         stat_values<outlier_cutoff_top) |> 
+  bind_rows(
+    control_comparison_data |>
+      filter(stat %in% c("network_robustness"),
+             stat_values>outlier_cutoff_bottom)
+  ) |> 
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y") +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+effciency_outliers <- 
+control_comparison_data |>
+  filter(stat %in% c("network_efficiency", "network_efficiency_nests"),
+         stat_values>=outlier_cutoff_top) |> 
+  bind_rows(
+    control_comparison_data |>
+      filter(stat %in% c("network_robustness"),
+             stat_values<=outlier_cutoff_bottom)
+  ) 
+
+effciency_outliers_table <- 
+effciency_outliers |>   
+calculate_descriptive(y=stat_values, stat_keys, dataset, t, treatment) |> 
+  select(-c(SD, Var_to_Mean, CV, LQ, Median, UQ, IQR, treatment)) |> 
+  relocate(N, .after = "t")
+
+# Number of components
+control_num_components_nests_plot <-
+  control_comparison_data |>
+  filter(stat == "num_components_nests") |>
+  ggplot(aes(
+    group = t,
+    # x = t,
+    x = stat_values,
+    y = after_stat(density),
+    fill = dataset
+  )) +
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(breaks = seq(0:(
+    control_comparison_data |>
+      filter(stat == "num_components_nests") |>
+      summarise(max = max(stat_values)) |>
+      pull()
+  ))) +
+  facet_wrap(vars(t)) +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 0,
+      hjust = 0.3,
+      vjust = 0.5
+    ),
+  ) +
+  xlab("Number of network components") +
+  ylab("Relative frequency")
+```
+
+```{r control_comparison_plot, echo=FALSE, warning=FALSE,fig.cap="Network measures calculated on *Estimation* and *Control validation data* and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons).", fig.width=9, fig.height=12}
+control_comparison_plot
+```
+
+```{r control_comparison_plot_no_outliers, echo=FALSE, warning=FALSE,fig.cap="Network efficiency ($<2$) and robustness ($>0.5$) calculated on *Estimation* and *Control validation data* and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons) The outlying points were excluded to improve the visibility of the plot.", fig.width=9, fig.height=6}
+control_comparison_plot_no_outliers
+```
+
+
+```{r effciency_outliers_table}
+if(nrow(effciency_outliers_table)>0){
+kable(effciency_outliers_table, digits = 2,
+      col.names = c("Network measure", "Dataset", "Timestep", "N", "Mean","Min","Max"),
+      row.names = FALSE,
+      caption = "Statistics on outlying points excluded from figure. Sample sizes (N), means, minimums (Min) and maximums (Max) are reported.",
+      format="html", booktabs = TRUE) |> 
+  column_spec(1,width = "3cm") |> 
+  column_spec(2,width = "3cm") |> 
+  column_spec(3,width = "1cm") |> 
+  column_spec(4,width = "1cm") |> 
+  column_spec(5,width = "1cm") |> 
+  column_spec(6,width = "1cm") 
+}
+```
+
+
+```{r control_num_components_nests_plot, echo=FALSE, warning=FALSE,fig.cap="Relative frequency of the number of network components of networks from the *Estimation* and *Control validation data* and our simulated networks at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons).", fig.width=9, fig.height=10}
+control_num_components_nests_plot
+```
+
+## Dynamic similarity of simulated control networks
+
+```{r control_comparison_dyn, include=FALSE, cache=TRUE}
+control_comparison_data_dyn <-
+  bind_rows(
+    simulation_stats |>
+      filter(t %in% time_steps) |>
+      filter(treatment == "control") |>
+      pivot_longer(
+        -c(dataset, colony,  t, treatment),
+        names_to = "stat",
+        values_to = "stat_values"
+      ) |>
+      left_join(stat_keys_val, by = "stat") |>
+      group_by(colony, stat) |>
+      mutate(stat_values_lag = lag(stat_values)) |>
+      arrange(stat, colony, t) |>
+      mutate(
+        stat_values_rel_change = ((stat_values - stat_values_lag) / stat_values_lag) * 100,
+        stat_values_abs_change = stat_values - stat_values_lag
+      ) |>
+      filter(!is.na(stat_values_rel_change)),
+    
+    empirical_stats |>
+      tibble() |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |>
+      filter(dataset %in% c("Empirical control",
+                            "Estimation")) |>
+      mutate(dataset = ifelse(dataset=="Empirical control","Control validation",dataset),
+             t = year(date)) |>
+      select(-date) |>
+      relocate(t, .after = colony) |>
+      pivot_longer(
+        -c(dataset, colony,  t),
+        names_to = "stat",
+        values_to = "stat_values"
+      ) |>
+      left_join(stat_keys_val, by = "stat") |>
+      group_by(colony, stat, dataset) |>
+      mutate(stat_values_lag = lag(stat_values)) |>
+      arrange(stat, colony, dataset, t) |>
+      mutate(
+        stat_values_rel_change = ((stat_values - stat_values_lag) / stat_values_lag) * 100,
+        stat_values_abs_change = stat_values - stat_values_lag
+      ) |>
+      filter(!is.na(stat_values_rel_change))
+  ) |> 
+  mutate(dataset = paste(dataset, "data"))
+
+control_comparison_data_dyn$stat_keys <- 
+gsub("- ", "-\n",control_comparison_data_dyn$stat_keys)
+
+
+control_comparison_plot_dyn <-
+  control_comparison_data_dyn |>
+  ggplot(aes(
+    group = dataset,
+    x = dataset,
+    y = stat_values_rel_change,
+    fill = dataset
+  )) +
+  geom_hline(yintercept = 0,
+             colour = "grey70",
+             linetype = "dashed") +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=2) +
+  ylab("Yearly relative change (%) in network measure value") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  )
+
+### Outlier plot
+outlier_bottom <- -100
+outlier_top <- 100
+
+control_comparison_data_dyn_no_out <- 
+control_comparison_data_dyn |> 
+  filter(between(stat_values_rel_change, outlier_bottom, outlier_top)) 
+
+control_comparison_plot_dyn_no_out <-
+  control_comparison_data_dyn_no_out |>
+  ggplot(aes(
+    group = dataset,
+    x = dataset,
+    y = stat_values_rel_change,
+    fill = dataset
+  )) +
+  geom_hline(yintercept = 0,
+             colour = "grey70",
+             linetype = "dashed") +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=2) +
+  ylab("Yearly relative change [-100%, 100%] in network measure value") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  ) 
+
+control_comparison_plot_combined <- 
+control_comparison_plot_dyn+
+  control_comparison_plot_dyn_no_out+ 
+plot_layout(guides = 'collect')+
+    plot_annotation(tag_levels = 'a')&
+  theme(legend.position = "bottom")
+```
+
+```{r control_comparison_plot_combined, echo=FALSE, warning=FALSE,fig.cap="Relative yearly changes in network measures calculated on *Estimation* and *Control validation data* and our relative seasonal changes in simulated control networks (at $t=28, 56, 84$ starting from $t=0$). Subfigure **a** shows the full range of changes, **b** shows changes between $[-100\\%, 100\\%]$ to better show the central values. ", fig.width=9, fig.height=12}
+control_comparison_plot_combined
+```
+
+## Similarity of simulated networks with resource exclusion
+
+```{r exclusion_comparison, include=FALSE, cache=TRUE}
+exclusion_comparison_data <-
+  bind_rows(
+    simulation_stats |>
+      filter(treatment == "strongest_re",
+             t %in% c(28, 56, 84)) |>
+      mutate(
+        year = paste("Year", t / 28),
+        t = paste0("t=", t),
+        dataset = "Simulation: strongest exclusion with reintroduction"
+      ),
+    
+    empirical_stats |>
+      select(-c(edge_density, edge_density_nests, resource_capital, resource_variance)) |> 
+      filter(dataset == "Empirical exclusion") |>
+      mutate(t = year(date),
+             dataset = ifelse(dataset=="Empirical exclusion","Exclusion validation data",dataset)) |>
+      filter(t %in% c(2017, 2018, 2019)) |>
+      mutate(year = paste("Year", t - 2016),
+             t = factor(t))
+  ) |>
+  pivot_longer(
+    -c(date, dataset, colony,  t, treatment, year),
+    names_to = "stat",
+    values_to = "stat_values"
+  ) |>
+  left_join(stat_keys_val, by = "stat") |> 
+  mutate(t = factor(
+    t,
+    levels = c(
+      "2017",
+      "t=28",
+      "2018",
+      "t=56",
+      "2019",
+      "t=84"
+    )
+  ))
+
+
+exclusion_comparison_plot <-
+  exclusion_comparison_data |>
+  ggplot(aes(
+    group = t,
+    x = t,
+    y = stat_values,
+    fill = dataset
+  )) +
+  geom_boxplot(outlier.size = 0.4) +
+  facet_wrap(vars(stat_keys),
+             scales = "free_y",
+             ncol=3) +
+  ylab("") +
+  xlab("") +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    # panel.grid.major.y = element_blank(),
+    # panel.grid.minor.y = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 90,
+      hjust = 1,
+      vjust = 0.5
+    ),
+  ) 
+
+exclusion_num_components_nests_plot <-
+  exclusion_comparison_data |>
+  filter(stat == "num_components_nests") |>
+  ggplot(aes(
+    group = t,
+    # x = t,
+    x = stat_values,
+    y = after_stat(density),
+    fill = dataset
+  )) +
+  geom_histogram(binwidth = 1) +
+  scale_x_continuous(breaks = seq(0:(
+    control_comparison_data |>
+      filter(stat == "num_components_nests") |>
+      summarise(max = max(stat_values)) |>
+      pull()
+  ))) +
+  facet_grid(rows = vars(dataset), cols = vars(year)) +
+  guides(fill = guide_legend(title = "Dataset", title.theme = element_text(face = "bold"))) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.background = element_rect(fill = "white"),
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(
+      face = "bold",
+      angle = 0,
+      hjust = 0.3,
+      vjust = 0.5
+    ),
+  ) +
+  xlab("Number of components") +
+  ylab("Relative frequency")
+```
+
+```{r exclusion_comparison_plot, echo=FALSE, warning=FALSE,fig.cap="Network measures calculated on *Exclusion validation data* and our simulated networks with the *strongest exclusion with reintroduction* treatment at highlighted timesteps (2017 and $t=28$: one year after the tree exclusion, 2018 and $t=28$: two years after the exclusion and one year after the reintroduction, 2019 and $t=84$ two years after the reintroduction).", fig.width=9, fig.height=12}
+exclusion_comparison_plot
+```
+
+```{r exclusion_num_components_nests_plot, echo=FALSE, warning=FALSE,fig.cap="Relative frequency of the number of network components of networks from the *Exclusion validation data* and our simulated networks with the *strongest exclusion with reintroduction* treatment at highlighted timesteps (2017 and $t=28$: one year after the tree exclusion, 2018 and $t=28$: two years after the exclusion and one year after the reintroduction, 2019 and $t=84$ two years after the reintroduction).", fig.width=9, fig.height=10}
+exclusion_num_components_nests_plot
+```
+
+
+  

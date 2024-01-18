@@ -1,0 +1,11 @@
+"parameter_name","distribution","distr_param","distr_param_est","distr_param_est_se"
+"Nests per colony","nbinom","mu",9.62207462942745,0.701491631915762
+"Nests per colony","nbinom","size",7.39341916016862,2.80449504484481
+"Internest trail length","gamma","shape",1.38422207498568,0.0848228299665581
+"Internest trail length","gamma","rate",0.286022704095846,0.0210412131545866
+"Foraging trail length","gamma","shape",1.7884198373007,0.114869055954268
+"Foraging trail length","gamma","rate",0.250831942071312,0.0185722644082109
+"Nest size","gamma","shape",0.571225232089637,0.0323707652374023
+"Nest size","gamma","rate",0.0147913467619219,0.0012523239898465
+"Number of foraging trails per nest","pois","lambda",0.951501156775012,0.0468770456198884
+"Number of trails per nest","pois","lambda",1.95842957324298,0.0672527301231639

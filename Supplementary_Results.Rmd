@@ -1,0 +1,348 @@
+---
+title: "Strong and weak environmental perturbations cause contrasting restructure of ant transportation networks\\linebreak Supplementary Material S2\\linebreak Supplementary Results"
+author:
+  - Imre Sándor Piross^[sandor.piross@gmail.com]
+  - Valentin Lecheval
+  - Scott Powell
+  - Matina C. Donaldson-Matasci
+  - Elva J. H. Robinson
+output:
+  pdf_document:
+    keep_tex: true
+    toc: true
+bibliography: Supplementary_references.bib
+csl: citation_style.csl
+header-includes:
+    - \usepackage{caption}
+---
+
+\captionsetup[table]{labelformat=empty}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(emmeans)
+library(knitr)
+
+options(dplyr.summarise.inform = FALSE)
+```
+
+```{r data import, cache=TRUE, include=FALSE}
+# Directory for simulation experiments
+new_dir <- "Simulation run 2023-06-27 15_29_43"
+
+# Gathering simulation statistics
+simulation_stats <-
+  lapply(list.files(paste0(
+    "./Output/", new_dir, "/Network statistics"
+  )),
+  function(x) {
+    readRDS(paste0("./Output/", new_dir, "/Network statistics/",
+                   x)) |>
+      mutate(dataset = "Simulation",
+             colony = x) |>
+      relocate(dataset, colony)
+  }) |> bind_rows()
+
+# Treatment keys
+treatment_keys <-
+  data.frame(
+    treatment=c("control", "strongest_re", "strongest_sus",
+                "weakest_re", "weakest_sus", "random_re", "random_sus"),
+    target=factor(c("Control", "Strongest", "Strongest",
+             "Weakest", "Weakest","Random","Random"),
+             levels = c("Control","Weakest","Random", "Strongest")),
+    type=factor(c("Control","Reintroduced","Sustained",
+           "Reintroduced","Sustained","Reintroduced","Sustained"),
+           levels = c("Control","Sustained","Reintroduced"))
+  )
+
+# Adding treatment keys
+simulation_stats <- 
+simulation_stats |> 
+  left_join(treatment_keys, by="treatment") |> 
+  relocate(target, type, .after = treatment)
+
+plot_simulation_stat <-
+  function(stat, stat_name, t_min=-8) {
+    plot_data <- 
+      simulation_stats |>
+      filter(t>=t_min) |>
+      group_by(treatment, type, target, t) |>
+      summarise(mean = mean({{stat}}, na.rm = TRUE)) |> 
+      filter((!(treatment!="control"&t<(-1))))
+    
+    # Plot
+    plot <-
+      plot_data |>
+      ggplot(aes(
+        y = mean,
+        x = t,
+        group = treatment,
+        colour = target,
+        linetype = type
+      )) +
+      geom_line() +
+      ylab(paste("Mean", stat_name,"\n")) +
+      scale_colour_manual(values = c("skyblue1", "purple", "red","black"),
+                          labels = c("Weakest","Random","Strongest"),
+                          breaks = c("Weakest","Random","Strongest"),
+                          name="Perturbation target") +
+      scale_linetype_manual(values = c("solid", "solid", "dashed"),
+                            name="Perturbation type") +
+      scale_x_continuous(breaks = seq(from = 0, to = 84, by = 28),
+                         minor_breaks = NULL,
+                         limits = c(t_min,84)) +
+      theme_minimal()+
+      theme(
+        text=element_text(colour = "black"),
+        legend.title = element_text(face = "bold"),
+        axis.title = element_text(face = "bold"),
+        panel.grid.minor.y = element_blank(),
+        legend.position="bottom"
+        )+
+      guides(colour = guide_legend(order = 2), 
+             linetype = guide_legend(order = 1))
+    
+    return(plot)
+  }
+
+calculate_means_and_CIs <- 
+  function(stat, time_steps=c(0,28,56,84)){
+    table <- 
+      simulation_stats |>
+      filter(t %in% time_steps) |>
+      mutate(t=paste0("t=",t)) |> 
+      group_by(treatment, type, target, t) |>
+      summarise(mean = mean({{stat}}, na.rm = TRUE)) |> 
+      pivot_wider(names_from = "t", values_from = "mean") 
+    
+    # Calculating 95% family-wise CIs
+    mod_data <- simulation_stats |>
+      filter(t %in% c(84)) |> 
+      select({{stat}},treatment) |> 
+      rename(STAT = {{stat}})
+    
+    mod <- lm(STAT~treatment, data = mod_data)
+    CIs <-
+      confint(ref_grid(mod), adjust = c("BH")) |> 
+      select(treatment, lower.CL, upper.CL)
+    
+    table <- 
+    table |> 
+      left_join(CIs, by="treatment") |>
+      ungroup() |> 
+      select(c(-treatment)) |> 
+      arrange(target,type)
+    
+    levels(table$target)[levels(table$target)=="Control"] <- ""
+    
+    colnames(table)[colnames(table) %in% c("type","target","lower.CL","upper.CL")] <- 
+      c("Perturbation type", "Perturbation target",
+        "t=84 \\linebreak 95% CI LB", "t=84 \\linebreak 95% CI UB")
+    
+    
+    return(table)
+    
+  }
+
+# Number of iterations
+sim_number <- 
+list.files(paste0(
+    "./Output/", new_dir, "/Network statistics"
+  )) |> length()
+
+```
+
+\newpage
+# Overview
+This supplementary document provides detailed results for Sandor Simulation MS. The sections present
+the results by network measures in the form of a) a figure showing the mean values of the network measures, and b) a table presenting the same means at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons) and 95% family-wise confidence intervals adjusted using the Bonferroni-Holm method @holmSimpleSequentiallyRejective1979
+estimating the mean at the end of the simulation ($t = 84$). This interval was included to show the precision reached by running `r sim_number` model simulations. See Supplementary Methods S1.1.4.8.1 Network measures for their detailed description.
+
+
+\newpage
+# S2.1 Number of nests
+\renewcommand{\caption}{Figure}
+```{r Figure S2.1, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.1: Mean number of nests over time by different treatments."}
+plot_simulation_stat(num_nests, "number of nests")
+```
+
+```{r Table S2.1}
+calculate_means_and_CIs(num_nests) |>
+  kable(digits = 3,
+        caption = "Table S2.1: Mean number of nests at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.2 Number of used trees
+\renewcommand{\caption}{Figure}
+```{r Figure S2.2, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.2: Mean number of used trees over time by different treatments."}
+plot_simulation_stat(num_trees, "number of used trees")
+```
+
+```{r Table S2.2}
+calculate_means_and_CIs(num_trees) |>
+  kable(digits = 3,
+        caption = "Table S2.2: Mean number of used trees at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.3 Number of internest trails
+\renewcommand{\caption}{Figure}
+```{r Figure S2.3, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.3: Mean number of internest trails over time by different treatments."}
+plot_simulation_stat(num_internest, "number of internest trails")
+```
+
+```{r Table S2.3}
+calculate_means_and_CIs(num_internest) |>
+  kable(digits = 3,
+        caption = "Table S2.3: Mean number of internest trails at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.4 Number of foraging trails
+\renewcommand{\caption}{Figure}
+```{r Figure S2.4, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.4: Mean number of foraging trails over time by different treatments."}
+plot_simulation_stat(num_foraging, "number of foraging trails")
+```
+
+```{r Table S2.4}
+calculate_means_and_CIs(num_foraging) |>
+  kable(digits = 3,
+        caption = "Table S2.4: Mean number of foraging trails at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.5 Trees to nests ratio
+\renewcommand{\caption}{Figure}
+```{r Figure S2.5, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.5: Mean ratio of the number of trees to the number of nests over time by different treatments."}
+plot_simulation_stat(trees_to_nests_rat, "trees to nests ratio")
+```
+
+```{r Table S2.5}
+calculate_means_and_CIs(trees_to_nests_rat) |>
+  kable(digits = 3,
+        caption = "Table S2.5: Mean ratio of the number of trees to the number of nests at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.6 Internest trails to nests ratio
+\renewcommand{\caption}{Figure}
+```{r Figure S2.6, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.6: Mean ratio of the number of internest trails to the number of nests over time by different treatments."}
+plot_simulation_stat(internest_to_nests_rat, "internest trails to nests ratio")
+```
+
+```{r Table S2.6}
+calculate_means_and_CIs(internest_to_nests_rat) |>
+  kable(digits = 3,
+        caption = "Table S2.6: Mean ratio of the number of internest trails to the number of nests at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.7 Foraging trails to nests ratio
+\renewcommand{\caption}{Figure}
+```{r Figure S2.7, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.7: Mean ratio of the number of foraging trails to the number of nests over time by different treatments."}
+plot_simulation_stat(foraging_to_nests_rat, "foraging trails to nests ratio")
+```
+
+```{r Table S2.7}
+calculate_means_and_CIs(foraging_to_nests_rat) |>
+  kable(digits = 3,
+        caption = "Table S2.7: Mean ratio of the number of foraging trails to the number of nests at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.8 Number of network components
+\renewcommand{\caption}{Figure}
+```{r Figure S2.8, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.8: Mean number of network components over time by different treatments."}
+plot_simulation_stat(num_components_nests, "number of network components")
+```
+
+```{r Table S2.8}
+calculate_means_and_CIs(num_components_nests) |>
+  kable(digits = 3,
+        caption = "Table S2.8: Mean number of network components at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.9 Network efficiency
+\renewcommand{\caption}{Figure}
+```{r Figure S2.9, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.9: Mean network efficiency over time by different treatments."}
+plot_simulation_stat(network_efficiency, "network efficiency")
+```
+
+```{r Table S2.9}
+calculate_means_and_CIs(network_efficiency) |>
+  kable(digits = 3,
+        caption = "Table S2.9: Mean network efficiency at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.10 Network efficiency - nests only
+\renewcommand{\caption}{Figure}
+```{r Figure S2.10, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.10: Mean efficiency of networks with only nests and internest trails over time by different treatments."}
+plot_simulation_stat(network_efficiency_nests, "network efficiency - nests only")
+```
+
+```{r Table S2.10}
+calculate_means_and_CIs(network_efficiency_nests) |>
+  kable(digits = 3,
+        caption = "Table S2.10: Mean efficiency of networks with only nests and internest trails at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.11 Network robustness
+\renewcommand{\caption}{Figure}
+```{r Figure S2.11, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.11: Mean network robustness over time by different treatments."}
+plot_simulation_stat(network_robustness, "network robustness")
+```
+
+```{r Table S2.11}
+calculate_means_and_CIs(network_robustness) |>
+  kable(digits = 3,
+        caption = "Table S2.11: Mean network robustness at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.12 Network robustness - nests only
+\renewcommand{\caption}{Figure}
+```{r Figure S2.12, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.12: Mean robustness of networks with only nests and internest trails over time by different treatments."}
+plot_simulation_stat(network_robustness_nests, "network robustness - nests only")
+```
+
+```{r Table S2.12}
+calculate_means_and_CIs(network_robustness_nests) |>
+  kable(digits = 3,
+        caption = "Table S2.12: Mean robustness of networks with only nests and internest trails at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.13 Network cost
+\renewcommand{\caption}{Figure}
+```{r Figure S2.13, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.13: Mean network cost over time by different treatments."}
+plot_simulation_stat(network_cost, "network cost")
+```
+
+```{r Table S2.13}
+calculate_means_and_CIs(network_cost) |>
+  kable(digits = 3,
+        caption = "Table S2.13: Mean network cost at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# S2.14 Network cost - nests only
+\renewcommand{\caption}{Figure}
+```{r Figure S2.14, fig.width=10, fig.height=7, fig.fullwidth=TRUE, fig.cap="\\medspace S2.14: Mean cost of networks with only nests and internest trails over time by different treatments."}
+plot_simulation_stat(network_cost_nests, "network cost - nests only")
+```
+
+```{r Table S2.14}
+calculate_means_and_CIs(network_cost_nests) |>
+  kable(digits = 3,
+        caption = "Table S2.14: Mean cost of networks with only nests and internest trails at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons). 95% family-wise confidence interval for the mean at the last timestep (t=84).")
+```
+
+\newpage
+# References

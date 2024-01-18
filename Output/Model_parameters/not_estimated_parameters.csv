@@ -1,0 +1,2 @@
+"K","foraging_max_length_m","nest_abandonment_threshold","map_width_m","rSSI_inhibit_dist_m","rSSI_density_tree_per_sq","internest_min_length_m","internest_redraw_max_length_m","initial_nest_size_cap","internest_rejection.nb","colony_loss_rate","max_growth_rate","max_budding_prob","max_budding_tries","new_nest_initial_size","new_foraging_trail_prob","new_internest_trail_prob","trail_abandonment_threshold","burn_in_length"
+382.431586120138,24.871927517758,0.292069117388539,60,2,0.01,1.5,2,0.95,100,0.075,0.125,0.04,100,10,0.0015,0.04,0.0025,8
