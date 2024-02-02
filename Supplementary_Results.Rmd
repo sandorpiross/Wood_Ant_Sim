@@ -157,9 +157,7 @@ list.files(paste0(
 
 \newpage
 # Overview
-This supplementary document provides detailed results for Sandor Simulation MS. The sections present
-the results by network measures in the form of a) a figure showing the mean values of the network measures, and b) a table presenting the same means at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons) and 95% family-wise confidence intervals adjusted using the Bonferroni-Holm method @holmSimpleSequentiallyRejective1979
-estimating the mean at the end of the simulation ($t = 84$). This interval was included to show the precision reached by running `r sim_number` model simulations. See Supplementary Methods S1.1.4.8.1 Network measures for their detailed description.
+This supplementary document provides detailed results for Piross et al. *"Strong and weak environmental perturbations cause contrasting restructure of ant transportation networks"*. The sections present the results by network measures in the form of a) a figure showing the mean values of the network measures, and b) a table presenting the same means at highlighted timesteps ($t=-8$, the beginning of the burn-in phase; $t=0$, the time of perturbations; $t=28$ the time of tree reintroduction; and $t=56,84$, end of the rest of the seasons) and 95% family-wise confidence intervals adjusted using the Bonferroni-Holm method @holmSimpleSequentiallyRejective1979 estimating the mean at the end of the simulation ($t = 84$). This interval was included to show the precision reached by running `r sim_number` model simulations. See Supplementary Methods S1.1.4.8.1 Network measures for their detailed description.
 
 
 \newpage
